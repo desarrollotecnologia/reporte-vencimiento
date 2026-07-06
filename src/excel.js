@@ -130,6 +130,15 @@ function colorAlerta(alerta) {
   return null;
 }
 
+function linkHoja(nombreHoja, celda) {
+  return `#'${nombreHoja}'!${celda}`;
+}
+
+function aplicarHipervinculo(celda, texto, nombreHoja, celdaDestino) {
+  celda.value = { text: texto, hyperlink: linkHoja(nombreHoja, celdaDestino) };
+  celda.font = { color: { argb: 'FF1565C0' }, underline: true };
+}
+
 function agregarTabla(hoja, nombre, ref, columnas, filas) {
   if (!filas.length) return;
   try {
@@ -320,16 +329,15 @@ export async function generarExcel({ productos, cortes, fechaReporte }) {
 
   const resProp = resumenPropietarios(productos);
   const filasResProp = [];
+  const filasPropMeta = [];
   resProp.forEach((r) => {
-    const anchor = anchorsProd.get(r.propietario);
-    const link = anchor ? `#Detalle Productos!A${anchor}` : '#Detalle Productos!A1';
     const dataRow = prodRes.addRow([
       r.propietario,
       ...TIPOS_REPORTE.map((t) => r[t] || 0),
       r.total,
       r.manana,
       r.pasado,
-      anchor ? 'Ver detalle ▶' : '',
+      anchorsProd.has(r.propietario) ? 'Ver detalle ▶' : '',
     ]);
     filasResProp.push([
       r.propietario,
@@ -338,14 +346,7 @@ export async function generarExcel({ productos, cortes, fechaReporte }) {
       r.manana,
       r.pasado,
     ]);
-    if (anchor) {
-      const propCell = dataRow.getCell(1);
-      propCell.value = { text: r.propietario, hyperlink: link };
-      propCell.font = { color: { argb: 'FF1565C0' }, underline: true };
-      const linkCell = dataRow.getCell(colsRes.length);
-      linkCell.value = { text: 'Ver detalle ▶', hyperlink: link };
-      linkCell.font = { color: { argb: 'FF1565C0' }, underline: true };
-    }
+    filasPropMeta.push({ r, rowNum: dataRow.number });
     dataRow.eachCell((cell) => {
       cell.border = borderThin();
       cell.alignment = { horizontal: 'center' };
@@ -365,6 +366,14 @@ export async function generarExcel({ productos, cortes, fechaReporte }) {
       filasResProp
     );
   }
+
+  filasPropMeta.forEach(({ r, rowNum }) => {
+    const anchor = anchorsProd.get(r.propietario);
+    if (!anchor) return;
+    const destino = `A${anchor}`;
+    aplicarHipervinculo(prodRes.getCell(rowNum, 1), r.propietario, 'Detalle Productos', destino);
+    aplicarHipervinculo(prodRes.getCell(rowNum, colsRes.length), 'Ver detalle ▶', 'Detalle Productos', destino);
+  });
   autoAncho(prodRes);
 
   // ── HOJA 4-5: CORTES ────────────────────────────────────────────────────
@@ -432,19 +441,17 @@ export async function generarExcel({ productos, cortes, fechaReporte }) {
 
   const resCortCli = resumenCortesCliente(cortes);
   const filasResCort = [];
+  const filasCortMeta = [];
   resCortCli.forEach((r) => {
-    const anchor = anchorsCortes.get(r.cliente);
-    const link = anchor ? `#Detalle Cortes!A${anchor}` : '#Detalle Cortes!A1';
-    const dataRow = cortRes.addRow([r.cliente, r.total, r.manana, r.pasado, anchor ? 'Ver detalle ▶' : '']);
+    const dataRow = cortRes.addRow([
+      r.cliente,
+      r.total,
+      r.manana,
+      r.pasado,
+      anchorsCortes.has(r.cliente) ? 'Ver detalle ▶' : '',
+    ]);
     filasResCort.push([r.cliente, r.total, r.manana, r.pasado]);
-    if (anchor) {
-      const propCell = dataRow.getCell(1);
-      propCell.value = { text: r.cliente, hyperlink: link };
-      propCell.font = { color: { argb: 'FF1565C0' }, underline: true };
-      const lc = dataRow.getCell(5);
-      lc.value = { text: 'Ver detalle ▶', hyperlink: link };
-      lc.font = { color: { argb: 'FF1565C0' }, underline: true };
-    }
+    filasCortMeta.push({ r, rowNum: dataRow.number });
     dataRow.eachCell((cell) => {
       cell.border = borderThin();
       cell.alignment = { horizontal: 'center' };
@@ -454,6 +461,13 @@ export async function generarExcel({ productos, cortes, fechaReporte }) {
   if (filasResCort.length) {
     agregarTabla(cortRes, 'TablaResumenCortes', `A3:D${filasResCort.length + 3}`, colsCortRes.slice(0, 4), filasResCort);
   }
+  filasCortMeta.forEach(({ r, rowNum }) => {
+    const anchor = anchorsCortes.get(r.cliente);
+    if (!anchor) return;
+    const destino = `A${anchor}`;
+    aplicarHipervinculo(cortRes.getCell(rowNum, 1), r.cliente, 'Detalle Cortes', destino);
+    aplicarHipervinculo(cortRes.getCell(rowNum, 5), 'Ver detalle ▶', 'Detalle Cortes', destino);
+  });
   autoAncho(cortRes);
 
   const nombreArchivo = `reporte-vencimiento-cava-${fechaReporte.replace(/\//g, '')}.xlsx`;
