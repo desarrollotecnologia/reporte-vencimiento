@@ -1,0 +1,19 @@
+{
+  "name": "bot-vencimiento-cava",
+  "version": "1.0.0",
+  "description": "Reporte diario de vencimiento en cava (días hábiles) y cortes por vencer",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "reporte": "node src/index.js --now",
+    "prueba": "node src/index.js --prueba"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "exceljs": "^4.4.0",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.10.0",
+    "pg": "^8.13.3"
+  }
+}
