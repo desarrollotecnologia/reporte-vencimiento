@@ -7,6 +7,7 @@ import {
   filtrarProximos,
   fmtFecha,
   diaHabilDesdeHoy,
+  vincularLenguaConMediaCanal,
 } from './vidaUtil.js';
 import { generarExcel } from './excel.js';
 import { enviarReporteConConfirmacion, enviarReportePrueba } from './email.js';
@@ -47,13 +48,21 @@ export async function ejecutarReporte({ enviarCorreo = true, modo = 'produccion'
 
   const [rawProd, rawCortes] = await Promise.all([fetchProductosEnCava(), fetchCortesEnCava()]);
 
-  const productos = filtrarProximos(rawProd.map(enriquecerProducto));
+  const vinculados = vincularLenguaConMediaCanal(rawProd);
+  const todosEnCava = vinculados.map(enriquecerProducto);
+  const productos = filtrarProximos(todosEnCava);
   const cortes = filtrarProximos(rawCortes.map(enriquecerCorte));
 
+  console.log(`  → ${todosEnCava.length} productos en cava`);
   console.log(`  → ${productos.length} productos próximos a vencer (mañana / pasado mañana)`);
   console.log(`  → ${cortes.length} cortes próximos a vencer`);
 
-  const { ruta, nombreArchivo } = await generarExcel({ productos, cortes, fechaReporte });
+  const { ruta, nombreArchivo } = await generarExcel({
+    productos,
+    productosEnCava: todosEnCava,
+    cortes,
+    fechaReporte,
+  });
   console.log(`  → Excel: ${ruta}`);
 
   const resumen = resumenProductos(productos, cortes);
@@ -76,7 +85,7 @@ export async function ejecutarReporte({ enviarCorreo = true, modo = 'produccion'
     }
   }
 
-  return { fechaReporte, productos, cortes, ruta, resumen };
+  return { fechaReporte, productos, productosEnCava: todosEnCava, cortes, ruta, resumen };
 }
 
 export async function shutdown() {

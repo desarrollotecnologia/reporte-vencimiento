@@ -5,6 +5,8 @@ import { config } from './config.js';
 import {
   VIDA_UTIL_HABILES,
   TIPOS_REPORTE,
+  TIPOS_RESUMEN_ORDEN,
+  ETIQUETA_TIPO,
   fmtFecha,
   diaHabilDesdeHoy,
 } from './vidaUtil.js';
@@ -76,17 +78,20 @@ function contarPor(items, fn) {
   return m;
 }
 
-function resumenPorTipo(items) {
-  return TIPOS_REPORTE.map((tipo) => {
-    const delTipo = items.filter((p) => p.tipo_producto === tipo);
+function resumenPorTipo(todosEnCava, proximos) {
+  return TIPOS_RESUMEN_ORDEN.map((tipo) => {
+    const enCava = todosEnCava.filter((p) => p.tipo_producto === tipo);
+    const cerca = proximos.filter((p) => p.tipo_producto === tipo);
     return {
       tipo,
+      etiqueta: ETIQUETA_TIPO[tipo] || tipo,
       vida_util: VIDA_UTIL_HABILES[tipo],
-      total: delTipo.length,
-      manana: delTipo.filter((p) => p.alerta === 'mañana').length,
-      pasado: delTipo.filter((p) => p.alerta === 'pasado_mañana').length,
+      en_cava: enCava.length,
+      total: cerca.length,
+      manana: cerca.filter((p) => p.alerta === 'mañana').length,
+      pasado: cerca.filter((p) => p.alerta === 'pasado_mañana').length,
     };
-  }).filter((r) => r.total > 0);
+  });
 }
 
 function resumenPropietarios(items, campoProp = 'propietario') {
@@ -162,6 +167,8 @@ function hojaDetalleProductos(wb, productos, anchors) {
   const headers = [
     'Propietario',
     'Código',
+    'Animal base',
+    'Media vinculada',
     'Tipo',
     'Alerta',
     'Fecha ingreso',
@@ -187,7 +194,9 @@ function hojaDetalleProductos(wb, productos, anchors) {
     const row = h.addRow([
       p.propietario,
       p.codigo,
-      p.tipo_producto,
+      p.animal_base || '',
+      p.media_vinculada ? `${p.media_vinculada} (${p.media_vinculada_tipo || ''})` : '',
+      ETIQUETA_TIPO[p.tipo_producto] || p.tipo_producto,
       p.alerta_label,
       p.fecha_ingreso,
       p.fecha_vencimiento,
@@ -206,7 +215,9 @@ function hojaDetalleProductos(wb, productos, anchors) {
     filasTabla.push([
       p.propietario,
       p.codigo,
-      p.tipo_producto,
+      p.animal_base || '',
+      p.media_vinculada ? `${p.media_vinculada} (${p.media_vinculada_tipo || ''})` : '',
+      ETIQUETA_TIPO[p.tipo_producto] || p.tipo_producto,
       p.alerta_label,
       p.fecha_ingreso,
       p.fecha_vencimiento,
@@ -220,13 +231,13 @@ function hojaDetalleProductos(wb, productos, anchors) {
   });
 
   if (filasTabla.length) {
-    agregarTabla(h, 'TablaDetalleProductos', `A1:L${filasTabla.length + 1}`, headers, filasTabla);
+    agregarTabla(h, 'TablaDetalleProductos', `A1:N${filasTabla.length + 1}`, headers, filasTabla);
   }
   autoAncho(h);
   return h;
 }
 
-export async function generarExcel({ productos, cortes, fechaReporte }) {
+export async function generarExcel({ productos, productosEnCava = productos, cortes, fechaReporte }) {
   await mkdir(config.reportsDir, { recursive: true });
 
   const wb = new ExcelJS.Workbook();
@@ -239,7 +250,7 @@ export async function generarExcel({ productos, cortes, fechaReporte }) {
 
   // ── HOJA 1: RESUMEN ─────────────────────────────────────────────────────
   const res = wb.addWorksheet('Resumen', { views: [{ state: 'frozen', ySplit: 4 }] });
-  titulo(res, 1, 'Reporte de vencimiento en cava — Colbeef', 7);
+  titulo(res, 1, 'Reporte de vencimiento en cava — Colbeef', 8);
   res.addRow([]);
   res.getCell(3, 1).value = 'Fecha del reporte';
   res.getCell(3, 2).value = fechaReporte;
@@ -254,30 +265,45 @@ export async function generarExcel({ productos, cortes, fechaReporte }) {
   res.getCell(row, 1).font = { bold: true, color: { argb: VERDE_OSC }, size: 12 };
   row += 1;
 
-  const headProd = ['Tipo producto', 'Vida útil (días háb.)', 'Total próximos', 'Mañana', 'Pasado mañana'];
+  const headProd = [
+    'Producto',
+    'Vida útil (días háb.)',
+    'Total en cava',
+    'Próximos a vencer',
+    'Mañana',
+    'Pasado mañana',
+  ];
   res.addRow(headProd);
   estiloEncabezado(res.getRow(row));
   row += 1;
 
-  const resTipos = resumenPorTipo(productos);
+  const resTipos = resumenPorTipo(productosEnCava, productos);
   for (const r of resTipos) {
-    const dataRow = res.addRow([r.tipo, r.vida_util, r.total, r.manana, r.pasado]);
+    const dataRow = res.addRow([r.etiqueta, r.vida_util, r.en_cava, r.total, r.manana, r.pasado]);
     dataRow.eachCell((cell) => {
       cell.border = borderThin();
       cell.alignment = { horizontal: 'center' };
     });
     dataRow.getCell(1).alignment = { horizontal: 'left' };
+    if (r.manana > 0) dataRow.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NARANJA } };
+    if (r.pasado > 0) dataRow.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: AZUL } };
     row += 1;
   }
-  res.addRow([
-    'TOTAL PRODUCTOS',
+  const totalRow = res.addRow([
+    'TOTAL',
     '',
+    productosEnCava.length,
     productos.length,
     productos.filter((p) => p.alerta === 'mañana').length,
     productos.filter((p) => p.alerta === 'pasado_mañana').length,
   ]);
-  res.getRow(row).font = { bold: true };
-  fillRow(res.getRow(row), GRIS);
+  totalRow.font = { bold: true };
+  fillRow(totalRow, GRIS);
+  row = totalRow.number + 1;
+  res.getCell(row, 1).value =
+    'Nota: Lengua y media canal del mismo animal comparten código base (ej. 2606-12533). En detalle, Media vinculada muestra la media canal asociada.';
+  res.getCell(row, 1).font = { italic: true, size: 10, color: { argb: 'FF666666' } };
+  res.mergeCells(row, 1, row, 6);
   row += 2;
 
   res.getCell(row, 1).value = 'CORTES EN CAVA';

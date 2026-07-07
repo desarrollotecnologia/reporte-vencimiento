@@ -11,6 +11,27 @@ export const VIDA_UTIL_HABILES = {
 
 export const TIPOS_REPORTE = Object.keys(VIDA_UTIL_HABILES);
 
+/** Orden de la tabla resumen general (como catálogo Colbeef). */
+export const TIPOS_RESUMEN_ORDEN = [
+  'Media Canal 1',
+  'Media Canal 2 Cola',
+  'Visceras Rojas',
+  'Visceras Blancas',
+  'Lengua',
+  'Cabeza',
+  'Patas y Manos',
+];
+
+export const ETIQUETA_TIPO = {
+  'Media Canal 1': 'Media canal 1',
+  'Media Canal 2 Cola': 'Media canal 2 cola',
+  'Visceras Rojas': 'Vísceras rojas',
+  'Visceras Blancas': 'Vísceras blancas',
+  Lengua: 'Lengua',
+  Cabeza: 'Cabeza',
+  'Patas y Manos': 'Patas y manos',
+};
+
 /** Sufijo del código de identificación por tipo (3.er segmento). */
 export const SUFIJO_CODIGO = {
   Cabeza: '6114',
@@ -168,4 +189,50 @@ export function enriquecerCorte(c) {
 
 export function filtrarProximos(items) {
   return items.filter((x) => x.alerta === 'mañana' || x.alerta === 'pasado_mañana');
+}
+
+/** Primeros dos segmentos del código = animal base (ej. 2606-12533). */
+export function animalBase(codigo) {
+  const partes = String(codigo ?? '')
+    .trim()
+    .split('-')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return partes.length >= 2 ? `${partes[0]}-${partes[1]}` : String(codigo ?? '').trim();
+}
+
+/**
+ * La lengua comparte animal_base con la media canal del mismo animal.
+ * Si la lengua no tiene destino, se toma de la media canal vinculada.
+ */
+export function vincularLenguaConMediaCanal(productos) {
+  const mediasPorAnimal = new Map();
+  for (const p of productos) {
+    if (!/media canal/i.test(p.tipo_producto)) continue;
+    const base = animalBase(p.codigo);
+    if (!mediasPorAnimal.has(base)) mediasPorAnimal.set(base, []);
+    mediasPorAnimal.get(base).push(p);
+  }
+
+  return productos.map((p) => {
+    if (normalizarTipo(p.tipo_producto) !== 'Lengua') {
+      return { ...p, animal_base: animalBase(p.codigo), media_vinculada: '', media_vinculada_tipo: '' };
+    }
+    const base = animalBase(p.codigo);
+    const medias = mediasPorAnimal.get(base) || [];
+    const mc1 = medias.find((m) => m.tipo_producto === 'Media Canal 1');
+    const mc2 = medias.find((m) => m.tipo_producto === 'Media Canal 2 Cola');
+    const ref = mc1 || mc2;
+    if (!ref) {
+      return { ...p, animal_base: base, media_vinculada: '', media_vinculada_tipo: '' };
+    }
+    return {
+      ...p,
+      animal_base: base,
+      media_vinculada: ref.codigo,
+      media_vinculada_tipo: ref.tipo_producto,
+      destino: p.destino || ref.destino,
+      sucursal: p.sucursal || ref.sucursal,
+    };
+  });
 }
