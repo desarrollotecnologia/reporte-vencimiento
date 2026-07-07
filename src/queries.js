@@ -1,6 +1,6 @@
 import { query } from './db.js';
 import { config } from './config.js';
-import { TIPOS_REPORTE } from './vidaUtil.js';
+import { TIPOS_REPORTE, normalizarCodigoProducto, normalizarTipo } from './vidaUtil.js';
 
 const SQL_CAVA_FROM = `
   FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
@@ -29,8 +29,8 @@ const SQL_CAVA_FROM = `
     ON de.id = s.id_destino
 `;
 
-const TIPOS_RIEL = TIPOS_REPORTE.filter((t) => !/media canal/i.test(t));
-const TIPOS_PBI = ['Lengua', 'Media Canal 1 ', 'Media Canal 2 Cola', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas', 'Cabeza'];
+/** Solo medias canal desde PBI (respaldo si no están en riel). */
+const TIPOS_PBI = ['Media Canal 1', 'Media Canal 2 Cola'];
 
 function fmtDate(v) {
   if (!v) return '';
@@ -39,9 +39,12 @@ function fmtDate(v) {
 }
 
 function normalizarFilaCava(r) {
+  const tipo = normalizarTipo(r.tipo_producto);
+  const codigoRaw = String(r.codigo ?? '').trim();
   return {
-    codigo: String(r.codigo ?? '').trim(),
-    tipo_producto: String(r.tipo_producto ?? '').trim(),
+    codigo: normalizarCodigoProducto(codigoRaw, tipo),
+    codigo_raw: codigoRaw,
+    tipo_producto: tipo,
     propietario: String(r.propietario ?? '').trim(),
     fecha_ingreso: fmtDate(r.fecha_ingreso),
     cava: String(r.cava ?? '').trim(),
@@ -49,10 +52,15 @@ function normalizarFilaCava(r) {
     sucursal: String(r.sucursal ?? '').trim(),
     destino: String(r.destino ?? '').trim(),
     observaciones: String(r.observaciones ?? '').trim(),
+    fuente: r.fuente ?? '',
   };
 }
 
-/** Todos los subproductos en cava (riel) — sin filtro de días. */
+function claveProducto(fila) {
+  return `${fila.codigo}|${fila.tipo_producto}`;
+}
+
+/** Todos los productos en cava (riel) — fuente principal con código completo. */
 async function fetchProductosCavaRiel() {
   const sql = `
     SELECT
@@ -72,11 +80,11 @@ async function fetchProductosCavaRiel() {
     ORDER BY tipo_producto, codigo
     LIMIT 50000
   `;
-  const { rows } = await query(sql, [TIPOS_RIEL]);
-  return rows.map(normalizarFilaCava);
+  const { rows } = await query(sql, [TIPOS_REPORTE]);
+  return rows.map((r) => normalizarFilaCava({ ...r, fuente: 'riel' }));
 }
 
-/** Todos los productos en cava (PBI) — medias canal y respaldo. */
+/** Medias canal en PBI — respaldo (código corto sin sufijo). */
 async function fetchProductosCavaPbi() {
   const sql = `
     SELECT
@@ -100,35 +108,37 @@ async function fetchProductosCavaPbi() {
       ...r,
       riel: '',
       observaciones: r.empresa_destino ? `Empresa destino: ${r.empresa_destino}` : '',
+      fuente: 'pbi',
     })
   );
 }
 
-/** Combina fuentes: PBI para medias canal; riel para el resto. */
+/** Combina fuentes: riel (código completo) + PBI solo para medias canal faltantes. */
 export async function fetchProductosEnCava() {
-  const resultados = await Promise.allSettled([fetchProductosCavaPbi(), fetchProductosCavaRiel()]);
-  const nombres = ['pbi', 'riel'];
-  const pbi = resultados[0].status === 'fulfilled' ? resultados[0].value : [];
-  const riel = resultados[1].status === 'fulfilled' ? resultados[1].value : [];
+  const resultados = await Promise.allSettled([fetchProductosCavaRiel(), fetchProductosCavaPbi()]);
+  const nombres = ['riel', 'pbi'];
+  const riel = resultados[0].status === 'fulfilled' ? resultados[0].value : [];
+  const pbi = resultados[1].status === 'fulfilled' ? resultados[1].value : [];
   resultados.forEach((res, i) => {
     if (res.status === 'rejected') {
       console.warn(`  ⚠ Productos (${nombres[i]}): ${res.reason?.message || res.reason}`);
     }
   });
 
-  const porCodigo = new Map();
-  const esMediaCanal = (tipo) => /media canal/i.test(tipo);
+  const porClave = new Map();
+  const codigosRiel = new Set(riel.map((f) => f.codigo));
+
+  for (const fila of riel) {
+    porClave.set(claveProducto(fila), fila);
+  }
 
   for (const fila of pbi) {
-    if (fila.codigo) porCodigo.set(fila.codigo, fila);
-  }
-  for (const fila of riel) {
-    if (!fila.codigo) continue;
-    if (esMediaCanal(fila.tipo_producto)) continue;
-    if (!porCodigo.has(fila.codigo)) porCodigo.set(fila.codigo, fila);
+    if (codigosRiel.has(fila.codigo)) continue;
+    const clave = claveProducto(fila);
+    if (!porClave.has(clave)) porClave.set(clave, fila);
   }
 
-  return [...porCodigo.values()].sort((a, b) => {
+  return [...porClave.values()].sort((a, b) => {
     const t = a.tipo_producto.localeCompare(b.tipo_producto, 'es');
     return t !== 0 ? t : a.codigo.localeCompare(b.codigo);
   });

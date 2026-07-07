@@ -11,6 +11,17 @@ export const VIDA_UTIL_HABILES = {
 
 export const TIPOS_REPORTE = Object.keys(VIDA_UTIL_HABILES);
 
+/** Sufijo del código de identificación por tipo (3.er segmento). */
+export const SUFIJO_CODIGO = {
+  Cabeza: '6114',
+  'Patas y Manos': '6493',
+  'Visceras Rojas': '60',
+  'Visceras Blancas': '61',
+  Lengua: '6000',
+  'Media Canal 1': '1001',
+  'Media Canal 2 Cola': '1002',
+};
+
 const TZ = 'America/Bogota';
 
 export function hoyEnBogota() {
@@ -86,7 +97,21 @@ export function diaHabilDesdeHoy(offset) {
 export function normalizarTipo(tipo) {
   const t = String(tipo ?? '').trim();
   if (t === 'Media Canal 1' || t.startsWith('Media Canal 1')) return 'Media Canal 1';
+  if (t === 'Media Canal 2 Cola' || t.startsWith('Media Canal 2')) return 'Media Canal 2 Cola';
   return t;
+}
+
+/** Completa el código con el sufijo del tipo cuando solo trae animal (2 segmentos). */
+export function normalizarCodigoProducto(codigo, tipo) {
+  const c = String(codigo ?? '').trim();
+  if (!c) return '';
+  const tipoNorm = normalizarTipo(tipo);
+  const partes = c.split('-').map((p) => p.trim()).filter(Boolean);
+  const sufijo = SUFIJO_CODIGO[tipoNorm];
+  if (!sufijo) return c;
+  if (partes.length >= 3) return partes.join('-');
+  if (partes.length === 2) return `${partes[0]}-${partes[1]}-${sufijo}`;
+  return c;
 }
 
 export function vidaUtilDe(tipo) {
