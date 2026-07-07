@@ -42,7 +42,7 @@ export const config = {
     .split(',')
     .map((e) => e.trim())
     .filter(Boolean),
-  cronSchedule: envStr('CRON_SCHEDULE', '0 6 * * *'),
+  cronSchedule: envStr('CRON_SCHEDULE', '59 5 * * *'),
   timezone: envStr('TIMEZONE', 'America/Bogota'),
   diasEnCava: envInt('DIAS_EN_CAVA', 3),
   diasVencimientoCortes: envInt('DIAS_VENCIMIENTO_CORTES', 3),

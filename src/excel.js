@@ -90,6 +90,8 @@ function resumenPorTipo(todosEnCava, proximos) {
       total: cerca.length,
       manana: cerca.filter((p) => p.alerta === 'mañana').length,
       pasado: cerca.filter((p) => p.alerta === 'pasado_mañana').length,
+      dia8: cerca.filter((p) => p.alerta === 'dia_8_cava').length,
+      dia10: cerca.filter((p) => p.alerta === 'dia_10_cava').length,
     };
   });
 }
@@ -132,6 +134,8 @@ function resumenCortesCliente(cortes) {
 function colorAlerta(alerta) {
   if (alerta === 'mañana') return NARANJA;
   if (alerta === 'pasado_mañana') return AZUL;
+  if (alerta === 'dia_8_cava') return AMARILLO;
+  if (alerta === 'dia_10_cava') return ROJO;
   return null;
 }
 
@@ -272,6 +276,8 @@ export async function generarExcel({ productos, productosEnCava = productos, cor
     'Próximos a vencer',
     'Mañana',
     'Pasado mañana',
+    'Día 8 en cava (MC)',
+    'Día 10 en cava (MC)',
   ];
   res.addRow(headProd);
   estiloEncabezado(res.getRow(row));
@@ -279,7 +285,16 @@ export async function generarExcel({ productos, productosEnCava = productos, cor
 
   const resTipos = resumenPorTipo(productosEnCava, productos);
   for (const r of resTipos) {
-    const dataRow = res.addRow([r.etiqueta, r.vida_util, r.en_cava, r.total, r.manana, r.pasado]);
+    const dataRow = res.addRow([
+      r.etiqueta,
+      r.vida_util,
+      r.en_cava,
+      r.total,
+      r.manana,
+      r.pasado,
+      r.dia8,
+      r.dia10,
+    ]);
     dataRow.eachCell((cell) => {
       cell.border = borderThin();
       cell.alignment = { horizontal: 'center' };
@@ -287,6 +302,8 @@ export async function generarExcel({ productos, productosEnCava = productos, cor
     dataRow.getCell(1).alignment = { horizontal: 'left' };
     if (r.manana > 0) dataRow.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NARANJA } };
     if (r.pasado > 0) dataRow.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: AZUL } };
+    if (r.dia8 > 0) dataRow.getCell(7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: AMARILLO } };
+    if (r.dia10 > 0) dataRow.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ROJO } };
     row += 1;
   }
   const totalRow = res.addRow([
@@ -296,6 +313,8 @@ export async function generarExcel({ productos, productosEnCava = productos, cor
     productos.length,
     productos.filter((p) => p.alerta === 'mañana').length,
     productos.filter((p) => p.alerta === 'pasado_mañana').length,
+    productos.filter((p) => p.alerta === 'dia_8_cava').length,
+    productos.filter((p) => p.alerta === 'dia_10_cava').length,
   ]);
   totalRow.font = { bold: true };
   fillRow(totalRow, GRIS);
@@ -303,7 +322,7 @@ export async function generarExcel({ productos, productosEnCava = productos, cor
   res.getCell(row, 1).value =
     'Nota: Lengua y media canal del mismo animal comparten código base (ej. 2606-12533). En detalle, Media vinculada muestra la media canal asociada.';
   res.getCell(row, 1).font = { italic: true, size: 10, color: { argb: 'FF666666' } };
-  res.mergeCells(row, 1, row, 6);
+  res.mergeCells(row, 1, row, 8);
   row += 2;
 
   res.getCell(row, 1).value = 'CORTES EN CAVA';
@@ -334,6 +353,12 @@ export async function generarExcel({ productos, productosEnCava = productos, cor
   row += 1;
   res.addRow(['Pasado mañana', 'Producto que vence en el segundo día hábil siguiente']);
   fillRow(res.getRow(row), AZUL);
+  row += 1;
+  res.addRow(['Día 8 en cava (MC)', 'Media canal con 8 días hábiles en cava — alerta anticipada de salida']);
+  fillRow(res.getRow(row), AMARILLO);
+  row += 1;
+  res.addRow(['Día 10 en cava (MC)', 'Media canal con 10 días hábiles en cava — segunda alerta si no salió']);
+  fillRow(res.getRow(row), ROJO);
   autoAncho(res);
 
   // ── HOJA 2: PRODUCTOS RESUMEN (tabla dinámica por propietario) ───────────

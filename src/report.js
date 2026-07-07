@@ -32,6 +32,8 @@ function resumenProductos(productos, cortes) {
     totalCortes: cortes.length,
     mananaProductos: productos.filter((p) => p.alerta === 'mañana').length,
     pasadoProductos: productos.filter((p) => p.alerta === 'pasado_mañana').length,
+    dia8Media: productos.filter((p) => p.alerta === 'dia_8_cava').length,
+    dia10Media: productos.filter((p) => p.alerta === 'dia_10_cava').length,
     mananaCortes: cortes.filter((c) => c.alerta === 'mañana').length,
     pasadoCortes: cortes.filter((c) => c.alerta === 'pasado_mañana').length,
     fManana: fmtFecha(diaHabilDesdeHoy(1)),

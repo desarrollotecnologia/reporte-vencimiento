@@ -32,6 +32,9 @@ export const ETIQUETA_TIPO = {
   'Patas y Manos': 'Patas y manos',
 };
 
+/** Días hábiles en cava para alertar medias canal (además de mañana/pasado mañana). */
+export const DIAS_ALERTA_MEDIA_CANAL = [8, 10];
+
 /** Sufijo del código de identificación por tipo (3.er segmento). */
 export const SUFIJO_CODIGO = {
   Cabeza: '6114',
@@ -139,10 +142,37 @@ export function vidaUtilDe(tipo) {
   return VIDA_UTIL_HABILES[normalizarTipo(tipo)] ?? null;
 }
 
-/**
- * Clasifica vencimiento: mañana | pasado_mañana | otro
- * según fecha límite de salida de cava.
- */
+export function esMediaCanal(tipo) {
+  const t = normalizarTipo(tipo);
+  return t === 'Media Canal 1' || t === 'Media Canal 2 Cola';
+}
+
+function labelAlerta(alerta) {
+  const map = {
+    mañana: 'Mañana',
+    pasado_mañana: 'Pasado mañana',
+    dia_8_cava: 'Día 8 en cava',
+    dia_10_cava: 'Día 10 en cava',
+  };
+  return map[alerta] || '';
+}
+
+/** Medias canal: día 8 y 10 en cava; también mañana/pasado mañana por vencimiento. */
+function aplicarAlertasMediaCanal(tipo, diasEnCava, alertaVencimiento) {
+  if (!esMediaCanal(tipo)) return alertaVencimiento;
+  if (alertaVencimiento === 'mañana' || alertaVencimiento === 'pasado_mañana') return alertaVencimiento;
+  if (diasEnCava === 10) return 'dia_10_cava';
+  if (diasEnCava === 8) return 'dia_8_cava';
+  return alertaVencimiento;
+}
+
+export function incluirEnReporte(item) {
+  if (item.alerta === 'mañana' || item.alerta === 'pasado_mañana') return true;
+  if (esMediaCanal(item.tipo_producto) && (item.alerta === 'dia_8_cava' || item.alerta === 'dia_10_cava')) {
+    return true;
+  }
+  return false;
+}
 export function clasificarAlerta(fechaVencimiento, hoy = hoyEnBogota()) {
   const venc = parseFecha(fechaVencimiento);
   if (!venc) return 'otro';
@@ -159,16 +189,18 @@ export function enriquecerProducto(p) {
   const vida = vidaUtilDe(tipo);
   const ingreso = parseFecha(p.fecha_ingreso);
   const fechaVencimiento = ingreso && vida ? addDiasHabiles(ingreso, vida) : null;
-  const alerta = fechaVencimiento ? clasificarAlerta(fechaVencimiento) : 'otro';
+  const diasEnCava = ingreso ? diasHabilesDesde(ingreso) : 0;
+  const alertaVenc = fechaVencimiento ? clasificarAlerta(fechaVencimiento) : 'otro';
+  const alerta = aplicarAlertasMediaCanal(tipo, diasEnCava, alertaVenc);
   return {
     ...p,
     tipo_producto: tipo,
     vida_util_habiles: vida,
     fecha_vencimiento: fechaVencimiento ? fmtFecha(fechaVencimiento) : '',
     fecha_vencimiento_iso: fechaVencimiento ? fmtFechaIso(fechaVencimiento) : '',
-    dias_habiles_en_cava: ingreso ? diasHabilesDesde(ingreso) : 0,
+    dias_habiles_en_cava: diasEnCava,
     alerta,
-    alerta_label: alerta === 'mañana' ? 'Mañana' : alerta === 'pasado_mañana' ? 'Pasado mañana' : '',
+    alerta_label: labelAlerta(alerta),
   };
 }
 
@@ -188,7 +220,7 @@ export function enriquecerCorte(c) {
 }
 
 export function filtrarProximos(items) {
-  return items.filter((x) => x.alerta === 'mañana' || x.alerta === 'pasado_mañana');
+  return items.filter(incluirEnReporte);
 }
 
 /** Primeros dos segmentos del código = animal base (ej. 2606-12533). */

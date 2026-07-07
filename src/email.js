@@ -16,6 +16,8 @@ function cuerpoHtmlReporte({ fechaReporte, resumen, titulo, esPrueba = false }) 
         ${fila('Total próximos a vencer', resumen.totalProductos)}
         ${fila('Mañana', resumen.mananaProductos, '#ffe0b2')}
         ${fila('Pasado mañana', resumen.pasadoProductos, '#e3f2fd')}
+        ${fila('Media canal — día 8 en cava', resumen.dia8Media ?? 0, '#fff9c4')}
+        ${fila('Media canal — día 10 en cava', resumen.dia10Media ?? 0, '#ffcdd2')}
       </table>
       <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse;font-size:14px;margin:12px 0;">
         <tr style="background:#259c39;color:white;"><th colspan="2">Cortes en cava</th></tr>

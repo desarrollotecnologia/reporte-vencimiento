@@ -56,7 +56,7 @@ async function main() {
     { timezone: config.timezone }
   );
 
-  console.log('Bot activo. Esperando próxima ejecución programada (6:00 AM)...');
+  console.log('Bot activo. Esperando próxima ejecución programada (5:59 AM)...');
   console.log('Prueba manual: npm run prueba');
 }
 

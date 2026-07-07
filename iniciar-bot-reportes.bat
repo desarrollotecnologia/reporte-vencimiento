@@ -57,7 +57,7 @@ if errorlevel 1 (
 )
 
 echo [OK] Bot iniciado correctamente.
-echo      Reporte automatico: 6:00 AM hora Colombia.
+echo      Reporte automatico: 5:59 AM hora Colombia.
 echo      Log: %LOG_FILE%
 if /i not "%SILENT%"=="silent" (
     echo.
