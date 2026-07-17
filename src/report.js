@@ -1,3 +1,10 @@
+/**
+ * Orquestador del caso de uso "generar reporte de vencimiento".
+ *
+ * Coordina infraestructura y dominio sin conocer detalles de SQL, formato
+ * interno del libro o protocolo SMTP. Esta separación mantiene las reglas
+ * reutilizables y permite generar el archivo sin enviarlo.
+ */
 import { config } from './config.js';
 import { closePool } from './db.js';
 import { fetchProductosEnCava, fetchCortesEnCava } from './queries.js';
@@ -12,6 +19,11 @@ import {
 import { generarExcel } from './excel.js';
 import { enviarReporteConConfirmacion, enviarReportePrueba } from './email.js';
 
+/**
+ * Fecha visible del reporte según la zona configurada para la operación.
+ *
+ * @returns {string} Fecha localizada para Colombia.
+ */
 function fechaReporteBogota() {
   return new Date().toLocaleDateString('es-CO', {
     timeZone: config.timezone,
@@ -21,6 +33,13 @@ function fechaReporteBogota() {
   });
 }
 
+/**
+ * Construye el agregado que consumen el asunto y el cuerpo del correo.
+ *
+ * @param {Array<Record<string, any>>} productos Productos incluidos.
+ * @param {Array<Record<string, any>>} cortes Cortes incluidos.
+ * @returns {Record<string, any>}
+ */
 function resumenProductos(productos, cortes) {
   const map = new Map();
   for (const p of productos) {
@@ -44,6 +63,24 @@ function resumenProductos(productos, cortes) {
   };
 }
 
+/**
+ * Ejecuta el pipeline completo de consulta, transformación, archivo y envío.
+ *
+ * Productos y cortes se consultan en paralelo porque son dominios
+ * independientes. El Excel siempre se genera antes de decidir si se envía.
+ *
+ * @param {object} [options]
+ * @param {boolean} [options.enviarCorreo=true] Permite generar sin SMTP.
+ * @param {'produccion'|'prueba'} [options.modo='produccion']
+ * @returns {Promise<{
+ *   fechaReporte: string,
+ *   productos: Array<Record<string, any>>,
+ *   productosEnCava: Array<Record<string, any>>,
+ *   cortes: Array<Record<string, any>>,
+ *   ruta: string,
+ *   resumen: Record<string, any>
+ * }>}
+ */
 export async function ejecutarReporte({ enviarCorreo = true, modo = 'produccion' } = {}) {
   const fechaReporte = fechaReporteBogota();
   console.log(`[${new Date().toISOString()}] Generando reporte para ${fechaReporte}...`);
@@ -90,6 +127,11 @@ export async function ejecutarReporte({ enviarCorreo = true, modo = 'produccion'
   return { fechaReporte, productos, productosEnCava: todosEnCava, cortes, ruta, resumen };
 }
 
+/**
+ * Libera los recursos compartidos de infraestructura.
+ *
+ * @returns {Promise<void>}
+ */
 export async function shutdown() {
   await closePool();
 }

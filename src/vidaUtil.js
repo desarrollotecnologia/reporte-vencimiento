@@ -1,3 +1,10 @@
+/**
+ * Reglas de dominio para vencimientos en cava.
+ *
+ * Las fechas se reducen deliberadamente a días calendario representados en
+ * UTC. Esto evita que horas y cambios del sistema alteren comparaciones que,
+ * para el negocio, solo dependen de la fecha en Bogotá.
+ */
 /** Vida útil en días hábiles (lun–vie) en cava. */
 export const VIDA_UTIL_HABILES = {
   Cabeza: 4,
@@ -48,12 +55,23 @@ export const SUFIJO_CODIGO = {
 
 const TZ = 'America/Bogota';
 
+/**
+ * Obtiene la fecha calendario actual de Bogotá, sin componente de hora.
+ *
+ * @returns {Date} Medianoche UTC equivalente al año, mes y día de Bogotá.
+ */
 export function hoyEnBogota() {
   const s = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
   const [y, m, d] = s.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d));
 }
 
+/**
+ * Convierte las representaciones de fecha admitidas al modelo interno UTC.
+ *
+ * @param {Date|string|null|undefined} val Fecha nativa, `AAAA-MM-DD` o `DD/MM/AAAA`.
+ * @returns {Date|null} Fecha sin hora o `null` cuando el valor no es válido.
+ */
 export function parseFecha(val) {
   if (!val) return null;
   if (val instanceof Date) {
@@ -67,23 +85,47 @@ export function parseFecha(val) {
   return null;
 }
 
+/**
+ * @param {Date|null|undefined} d Fecha en UTC.
+ * @returns {string} Fecha `DD/MM/AAAA` o texto vacío.
+ */
 export function fmtFecha(d) {
   if (!d) return '';
   const pad = (n) => String(n).padStart(2, '0');
   return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
 }
 
+/**
+ * @param {Date|null|undefined} d Fecha en UTC.
+ * @returns {string} Fecha `AAAA-MM-DD` o texto vacío.
+ */
 export function fmtFechaIso(d) {
   if (!d) return '';
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Determina si una fecha corresponde a lunes-viernes.
+ *
+ * Los festivos no forman parte del calendario actual.
+ *
+ * @param {Date} d
+ * @returns {boolean}
+ */
 export function esDiaHabil(d) {
   const w = d.getUTCDay();
   return w !== 0 && w !== 6;
 }
 
-/** Suma N días hábiles a partir de la fecha de ingreso (día 0 = ingreso). */
+/**
+ * Suma N días hábiles a partir de la fecha de ingreso.
+ *
+ * El ingreso es día cero: el conteo comienza en el día calendario siguiente.
+ *
+ * @param {Date} fechaInicio
+ * @param {number} diasHabiles
+ * @returns {Date}
+ */
 export function addDiasHabiles(fechaInicio, diasHabiles) {
   const d = new Date(fechaInicio);
   let sumados = 0;
@@ -94,7 +136,13 @@ export function addDiasHabiles(fechaInicio, diasHabiles) {
   return d;
 }
 
-/** Días hábiles transcurridos desde ingreso hasta hoy (inclusive del ingreso si es hábil). */
+/**
+ * Cuenta días hábiles transcurridos, incluyendo ingreso y fecha final.
+ *
+ * @param {Date|string} fechaInicio
+ * @param {Date} [hasta=hoyEnBogota()]
+ * @returns {number}
+ */
 export function diasHabilesDesde(fechaInicio, hasta = hoyEnBogota()) {
   const ini = parseFecha(fechaInicio);
   if (!ini) return 0;
@@ -107,7 +155,12 @@ export function diasHabilesDesde(fechaInicio, hasta = hoyEnBogota()) {
   return count;
 }
 
-/** N-ésimo día hábil a partir de hoy (1 = mañana, 2 = pasado mañana). */
+/**
+ * Calcula el N-ésimo día hábil posterior a hoy.
+ *
+ * @param {number} offset `1` para mañana hábil, `2` para el siguiente.
+ * @returns {Date}
+ */
 export function diaHabilDesdeHoy(offset) {
   let d = hoyEnBogota();
   let n = 0;
@@ -118,6 +171,12 @@ export function diaHabilDesdeHoy(offset) {
   return d;
 }
 
+/**
+ * Consolida variantes de nombres que deben compartir reglas.
+ *
+ * @param {unknown} tipo
+ * @returns {string}
+ */
 export function normalizarTipo(tipo) {
   const t = String(tipo ?? '').trim();
   if (t === 'Media Canal 1' || t.startsWith('Media Canal 1')) return 'Media Canal 1';
@@ -125,7 +184,16 @@ export function normalizarTipo(tipo) {
   return t;
 }
 
-/** Completa el código con el sufijo del tipo cuando solo trae animal (2 segmentos). */
+/**
+ * Completa el código con el sufijo del tipo cuando solo trae el animal.
+ *
+ * Los códigos con tres o más segmentos se respetan para no sobrescribir la
+ * identificación entregada por la fuente.
+ *
+ * @param {unknown} codigo
+ * @param {unknown} tipo
+ * @returns {string}
+ */
 export function normalizarCodigoProducto(codigo, tipo) {
   const c = String(codigo ?? '').trim();
   if (!c) return '';
@@ -138,10 +206,18 @@ export function normalizarCodigoProducto(codigo, tipo) {
   return c;
 }
 
+/**
+ * @param {unknown} tipo
+ * @returns {number|null} Vida útil o `null` para un tipo desconocido.
+ */
 export function vidaUtilDe(tipo) {
   return VIDA_UTIL_HABILES[normalizarTipo(tipo)] ?? null;
 }
 
+/**
+ * @param {unknown} tipo
+ * @returns {boolean}
+ */
 export function esMediaCanal(tipo) {
   const t = normalizarTipo(tipo);
   return t === 'Media Canal 1' || t === 'Media Canal 2 Cola';
@@ -157,7 +233,10 @@ function labelAlerta(alerta) {
   return map[alerta] || '';
 }
 
-/** Medias canal: día 8 y 10 en cava; también mañana/pasado mañana por vencimiento. */
+/**
+ * Aplica alertas preventivas de media canal sin desplazar una alerta de
+ * vencimiento más urgente.
+ */
 function aplicarAlertasMediaCanal(tipo, diasEnCava, alertaVencimiento) {
   if (!esMediaCanal(tipo)) return alertaVencimiento;
   if (alertaVencimiento === 'mañana' || alertaVencimiento === 'pasado_mañana') return alertaVencimiento;
@@ -166,6 +245,12 @@ function aplicarAlertasMediaCanal(tipo, diasEnCava, alertaVencimiento) {
   return alertaVencimiento;
 }
 
+/**
+ * Decide si un elemento procesado pertenece al reporte operativo.
+ *
+ * @param {{ alerta?: string, tipo_producto?: string }} item
+ * @returns {boolean}
+ */
 export function incluirEnReporte(item) {
   if (item.alerta === 'mañana' || item.alerta === 'pasado_mañana') return true;
   if (esMediaCanal(item.tipo_producto) && (item.alerta === 'dia_8_cava' || item.alerta === 'dia_10_cava')) {
@@ -173,6 +258,14 @@ export function incluirEnReporte(item) {
   }
   return false;
 }
+
+/**
+ * Compara un vencimiento contra los dos próximos días hábiles.
+ *
+ * @param {Date|string|null} fechaVencimiento
+ * @param {Date} [hoy=hoyEnBogota()] Reservado para una fecha de referencia.
+ * @returns {'mañana'|'pasado_mañana'|'otro'}
+ */
 export function clasificarAlerta(fechaVencimiento, hoy = hoyEnBogota()) {
   const venc = parseFecha(fechaVencimiento);
   if (!venc) return 'otro';
@@ -184,6 +277,12 @@ export function clasificarAlerta(fechaVencimiento, hoy = hoyEnBogota()) {
   return 'otro';
 }
 
+/**
+ * Añade a un producto los campos derivados de vida útil y alerta.
+ *
+ * @param {Record<string, any>} p Producto normalizado por la capa de consultas.
+ * @returns {Record<string, any>} Nuevo objeto; no modifica la entrada.
+ */
 export function enriquecerProducto(p) {
   const tipo = normalizarTipo(p.tipo_producto);
   const vida = vidaUtilDe(tipo);
@@ -204,6 +303,12 @@ export function enriquecerProducto(p) {
   };
 }
 
+/**
+ * Normaliza fechas y alerta de un corte consultado.
+ *
+ * @param {Record<string, any>} c Corte normalizado.
+ * @returns {Record<string, any>}
+ */
 export function enriquecerCorte(c) {
   const venc = parseFecha(c.fecha_vencimiento);
   const alerta = clasificarAlerta(venc);
@@ -219,11 +324,21 @@ export function enriquecerCorte(c) {
   };
 }
 
+/**
+ * @template T
+ * @param {T[]} items Elementos enriquecidos con alerta y tipo.
+ * @returns {T[]}
+ */
 export function filtrarProximos(items) {
   return items.filter(incluirEnReporte);
 }
 
-/** Primeros dos segmentos del código = animal base (ej. 2606-12533). */
+/**
+ * Extrae los dos primeros segmentos que identifican al animal.
+ *
+ * @param {unknown} codigo
+ * @returns {string}
+ */
 export function animalBase(codigo) {
   const partes = String(codigo ?? '')
     .trim()
@@ -236,6 +351,10 @@ export function animalBase(codigo) {
 /**
  * La lengua comparte animal_base con la media canal del mismo animal.
  * Si la lengua no tiene destino, se toma de la media canal vinculada.
+ * Se prioriza Media Canal 1 y se usa Media Canal 2 Cola como respaldo.
+ *
+ * @param {Array<Record<string, any>>} productos
+ * @returns {Array<Record<string, any>>} Colección nueva con vínculo y datos heredados.
  */
 export function vincularLenguaConMediaCanal(productos) {
   const mediasPorAnimal = new Map();

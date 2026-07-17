@@ -1,7 +1,15 @@
+/**
+ * Capa de acceso y adaptación de datos.
+ *
+ * Las diferencias entre las fuentes de SIRT se resuelven aquí para que el
+ * dominio trabaje con contratos uniformes. Las funciones públicas toleran el
+ * fallo aislado de una fuente y deduplican antes de entregar los resultados.
+ */
 import { query } from './db.js';
 import { config } from './config.js';
 import { TIPOS_REPORTE, normalizarCodigoProducto, normalizarTipo } from './vidaUtil.js';
 
+// Fragmento común de la consulta principal de productos en riel.
 const SQL_CAVA_FROM = `
   FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
   JOIN trazabilidad_proceso.parte_producto pp
@@ -32,12 +40,24 @@ const SQL_CAVA_FROM = `
 /** Solo medias canal desde PBI (respaldo si no están en riel). */
 const TIPOS_PBI = ['Media Canal 1', 'Media Canal 2 Cola'];
 
+/**
+ * Serializa fechas de PostgreSQL sin imponer formato a valores ya textuales.
+ *
+ * @param {unknown} v
+ * @returns {string}
+ */
 function fmtDate(v) {
   if (!v) return '';
   if (v instanceof Date) return v.toISOString().slice(0, 19).replace('T', ' ');
   return String(v);
 }
 
+/**
+ * Adapta las columnas heterogéneas de riel y PBI al contrato de producto.
+ *
+ * @param {Record<string, any>} r
+ * @returns {Record<string, string>}
+ */
 function normalizarFilaCava(r) {
   const tipo = normalizarTipo(r.tipo_producto);
   const codigoRaw = String(r.codigo ?? '').trim();
@@ -56,11 +76,22 @@ function normalizarFilaCava(r) {
   };
 }
 
+/**
+ * La identidad funcional incluye tipo porque un animal puede tener varias
+ * partes con el mismo código base.
+ */
 function claveProducto(fila) {
   return `${fila.codigo}|${fila.tipo_producto}`;
 }
 
-/** Todos los productos en cava (riel) — fuente principal con código completo. */
+/**
+ * Consulta todos los productos activos en riel.
+ *
+ * Es la fuente principal porque aporta el código completo y la relación
+ * operacional de cava, riel, sucursal y destino.
+ *
+ * @returns {Promise<Array<Record<string, string>>>}
+ */
 async function fetchProductosCavaRiel() {
   const sql = `
     SELECT
@@ -84,7 +115,11 @@ async function fetchProductosCavaRiel() {
   return rows.map((r) => normalizarFilaCava({ ...r, fuente: 'riel' }));
 }
 
-/** Medias canal en PBI — respaldo (código corto sin sufijo). */
+/**
+ * Consulta medias canales en PBI como respaldo de registros ausentes en riel.
+ *
+ * @returns {Promise<Array<Record<string, string>>>}
+ */
 async function fetchProductosCavaPbi() {
   const sql = `
     SELECT
@@ -113,7 +148,14 @@ async function fetchProductosCavaPbi() {
   );
 }
 
-/** Combina fuentes: riel (código completo) + PBI solo para medias canal faltantes. */
+/**
+ * Combina productos de riel y PBI con degradación parcial.
+ *
+ * `Promise.allSettled` evita perder una fuente sana cuando la otra falla.
+ * La fila de riel siempre prevalece y PBI solo completa códigos ausentes.
+ *
+ * @returns {Promise<Array<Record<string, string>>>}
+ */
 export async function fetchProductosEnCava() {
   const resultados = await Promise.allSettled([fetchProductosCavaRiel(), fetchProductosCavaPbi()]);
   const nombres = ['riel', 'pbi'];
@@ -144,6 +186,13 @@ export async function fetchProductosEnCava() {
   });
 }
 
+/**
+ * Adapta las fuentes de cortes a un contrato común para reglas y Excel.
+ *
+ * @param {Record<string, any>} r
+ * @param {string} fuente Identificador trazable de la fuente.
+ * @returns {Record<string, string>}
+ */
 function normalizarFilaCorte(r, fuente) {
   return {
     identificacion: String(r.identificacion ?? ''),
@@ -163,6 +212,14 @@ function normalizarFilaCorte(r, fuente) {
   };
 }
 
+/**
+ * Consulta cortes vigentes del esquema operativo de desposte.
+ *
+ * La unión lateral escoge una sola cava por lote, priorizando refrigeración y
+ * después el menor identificador para producir un resultado determinista.
+ *
+ * @returns {Promise<Array<Record<string, string>>>}
+ */
 async function fetchCortesDesposte() {
   const sql = `
     SELECT
@@ -203,6 +260,11 @@ async function fetchCortesDesposte() {
   return rows.map((r) => normalizarFilaCorte(r, 'desposte'));
 }
 
+/**
+ * Consulta la vista consolidada PBI de productos ubicados en cava.
+ *
+ * @returns {Promise<Array<Record<string, string>>>}
+ */
 async function fetchCortesPbi() {
   const sql = `
     SELECT
@@ -230,6 +292,14 @@ async function fetchCortesPbi() {
   return rows.map((r) => normalizarFilaCorte(r, 'vw_pbi05'));
 }
 
+/**
+ * Obtiene cortes desde las fuentes habilitadas y elimina duplicados.
+ *
+ * La configuración válida es `adesposte`, `pbi05` o `both`. Cada error se
+ * registra de manera independiente para permitir resultados parciales.
+ *
+ * @returns {Promise<Array<Record<string, string>>>}
+ */
 export async function fetchCortesEnCava() {
   const fuente = config.cortesFuente;
   const tareas = [];
@@ -254,7 +324,7 @@ export async function fetchCortesEnCava() {
   return out;
 }
 
-/** @deprecated usar fetchProductosEnCava */
+/** @deprecated Usar `fetchProductosEnCava`. */
 export const fetchProductos3DiasEnCava = fetchProductosEnCava;
-/** @deprecated usar fetchCortesEnCava */
+/** @deprecated Usar `fetchCortesEnCava`. */
 export const fetchCortesPorVencer = fetchCortesEnCava;

@@ -1,7 +1,20 @@
+/**
+ * Adaptador de salida SMTP.
+ *
+ * Centraliza la construcción del mensaje, el adjunto y las variantes de
+ * distribución. Recibe únicamente datos procesados; no consulta la base ni
+ * aplica reglas de vencimiento.
+ */
 import nodemailer from 'nodemailer';
 import { readFile } from 'fs/promises';
 import { config } from './config.js';
 
+/**
+ * Construye el resumen HTML que acompaña al archivo detallado.
+ *
+ * @param {object} input
+ * @returns {string}
+ */
 function cuerpoHtmlReporte({ fechaReporte, resumen, titulo, esPrueba = false }) {
   const fila = (label, val, bg) =>
     `<tr${bg ? ` style="background:${bg}"` : ''}><td>${label}</td><td align="center"><strong>${val}</strong></td></tr>`;
@@ -38,6 +51,14 @@ function cuerpoHtmlReporte({ fechaReporte, resumen, titulo, esPrueba = false }) 
   `;
 }
 
+/**
+ * Crea un transportador por operación.
+ *
+ * El puerto 465 se considera SMTP seguro implícito. La política de TLS se
+ * conserva compatible con la configuración histórica del bot.
+ *
+ * @returns {import('nodemailer').Transporter}
+ */
 function crearTransportador() {
   const { smtp } = config;
   return nodemailer.createTransport({
@@ -52,6 +73,17 @@ function crearTransportador() {
   });
 }
 
+/**
+ * Envía el reporte con su Excel adjunto a la lista indicada.
+ *
+ * @param {object} input
+ * @param {string} input.rutaExcel
+ * @param {string} input.nombreArchivo
+ * @param {Record<string, any>} input.resumen
+ * @param {string} input.fechaReporte
+ * @param {string[]} [input.destinatarios=config.reportTo]
+ * @returns {Promise<import('nodemailer').SentMessageInfo>}
+ */
 export async function enviarReporte({ rutaExcel, nombreArchivo, resumen, fechaReporte, destinatarios = config.reportTo }) {
   if (!destinatarios.length) {
     throw new Error('No hay destinatarios configurados para el reporte.');
@@ -79,7 +111,12 @@ export async function enviarReporte({ rutaExcel, nombreArchivo, resumen, fechaRe
   return info;
 }
 
-/** Envío de prueba: Excel completo solo a desarrollo/tecnología. */
+/**
+ * Envía el Excel completo solo a los destinatarios de notificación.
+ *
+ * El asunto y el cuerpo quedan marcados para impedir que se confunda con una
+ * distribución productiva.
+ */
 export async function enviarReportePrueba({ rutaExcel, nombreArchivo, resumen, fechaReporte }) {
   if (!config.reportNotifyTo.length) {
     throw new Error('REPORT_NOTIFY_TO está vacío. Configure desarrollo.tecnologia@colbeef.com en .env');
@@ -110,10 +147,15 @@ export async function enviarReportePrueba({ rutaExcel, nombreArchivo, resumen, f
   });
 }
 
+/** Une destinatarios principales y de notificación sin repetir direcciones. */
 function destinatariosReporteCompleto() {
   return [...new Set([...config.reportTo, ...config.reportNotifyTo])];
 }
 
+/**
+ * Ejecuta la distribución productiva y, después de su éxito, envía una
+ * confirmación separada. Nunca confirma un reporte principal fallido.
+ */
 export async function enviarReporteConConfirmacion({ rutaExcel, nombreArchivo, resumen, fechaReporte }) {
   const transport = crearTransportador();
   const todos = destinatariosReporteCompleto();
@@ -139,7 +181,11 @@ export async function enviarReporteConConfirmacion({ rutaExcel, nombreArchivo, r
   return { reporte, confirmacion, destinatarios: todos };
 }
 
-/** Aviso a desarrollo/tecnología: confirmación de envío (también reciben el Excel en el correo principal). */
+/**
+ * Notifica a desarrollo/tecnología que el correo principal fue aceptado por
+ * el servidor SMTP. Los destinatarios de notificación ya reciben el adjunto en
+ * el envío principal.
+ */
 export async function enviarConfirmacionEnvio({
   transport,
   fechaReporte,
@@ -169,6 +215,11 @@ export async function enviarConfirmacionEnvio({
   });
 }
 
+/**
+ * Comprueba conexión, seguridad y autenticación SMTP sin enviar mensajes.
+ *
+ * @returns {Promise<void>}
+ */
 export async function verificarSmtp() {
   const transport = crearTransportador();
   await transport.verify();

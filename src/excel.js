@@ -1,3 +1,10 @@
+/**
+ * Capa de presentación para Microsoft Excel.
+ *
+ * Convierte los modelos ya enriquecidos en un libro navegable. Este módulo no
+ * calcula vencimientos: solo agrega, ordena y representa los resultados que
+ * recibe del dominio.
+ */
 import ExcelJS from 'exceljs';
 import { mkdir } from 'fs/promises';
 import { join } from 'path';
@@ -23,12 +30,14 @@ const ROJO = 'FFFFCDD2';
 const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: VERDE } };
 const HEADER_FONT = { bold: true, color: { argb: BLANCO }, size: 11 };
 
+/** Aplica un color de fondo uniforme conservando valores y demás estilos. */
 function fillRow(row, color) {
   row.eachCell((cell) => {
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
   });
 }
 
+/** Establece la convención visual de todos los encabezados tabulares. */
 function estiloEncabezado(row) {
   row.eachCell((cell) => {
     cell.fill = HEADER_FILL;
@@ -39,6 +48,7 @@ function estiloEncabezado(row) {
   row.height = 26;
 }
 
+/** Crea un borde nuevo para evitar compartir objetos mutables entre celdas. */
 function borderThin() {
   return {
     top: { style: 'thin', color: { argb: 'FFCCCCCC' } },
@@ -48,6 +58,10 @@ function borderThin() {
   };
 }
 
+/**
+ * Ajusta el ancho según el contenido y aplica límites para evitar hojas
+ * ilegibles por columnas extremadamente cortas o largas.
+ */
 function autoAncho(hoja, min = 10, max = 42) {
   hoja.columns.forEach((col) => {
     let w = min;
@@ -59,6 +73,7 @@ function autoAncho(hoja, min = 10, max = 42) {
   });
 }
 
+/** Inserta una banda de título combinada con el estilo corporativo. */
 function titulo(hoja, fila, texto, cols = 8) {
   hoja.mergeCells(fila, 1, fila, cols);
   const cell = hoja.getCell(fila, 1);
@@ -69,6 +84,7 @@ function titulo(hoja, fila, texto, cols = 8) {
   hoja.getRow(fila).height = 28;
 }
 
+/** @deprecated Utilidad conservada; no participa en la generación actual. */
 function contarPor(items, fn) {
   const m = new Map();
   for (const x of items) {
@@ -78,6 +94,7 @@ function contarPor(items, fn) {
   return m;
 }
 
+/** Calcula indicadores del resumen general respetando el orden de negocio. */
 function resumenPorTipo(todosEnCava, proximos) {
   return TIPOS_RESUMEN_ORDEN.map((tipo) => {
     const enCava = todosEnCava.filter((p) => p.tipo_producto === tipo);
@@ -96,6 +113,7 @@ function resumenPorTipo(todosEnCava, proximos) {
   });
 }
 
+/** Agrupa productos por propietario y calcula totales por tipo y alerta. */
 function resumenPropietarios(items, campoProp = 'propietario') {
   const props = [...new Set(items.map((x) => x[campoProp] || 'SIN PROPIETARIO'))].sort((a, b) =>
     a.localeCompare(b, 'es')
@@ -116,6 +134,7 @@ function resumenPropietarios(items, campoProp = 'propietario') {
   });
 }
 
+/** Agrupa cortes por cliente para construir la hoja de navegación. */
 function resumenCortesCliente(cortes) {
   const clientes = [...new Set(cortes.map((c) => c.propietario || 'SIN CLIENTE'))].sort((a, b) =>
     a.localeCompare(b, 'es')
@@ -131,6 +150,7 @@ function resumenCortesCliente(cortes) {
   });
 }
 
+/** Traduce la prioridad funcional de una alerta a su color de presentación. */
 function colorAlerta(alerta) {
   if (alerta === 'mañana') return NARANJA;
   if (alerta === 'pasado_mañana') return AZUL;
@@ -139,15 +159,24 @@ function colorAlerta(alerta) {
   return null;
 }
 
+/** Construye un vínculo interno compatible con nombres de hoja con espacios. */
 function linkHoja(nombreHoja, celda) {
   return `#'${nombreHoja}'!${celda}`;
 }
 
+/** Aplica texto y formato de enlace a una celda del resumen. */
 function aplicarHipervinculo(celda, texto, nombreHoja, celdaDestino) {
   celda.value = { text: texto, hyperlink: linkHoja(nombreHoja, celdaDestino) };
   celda.font = { color: { argb: 'FF1565C0' }, underline: true };
 }
 
+/**
+ * Añade filtros y formato de tabla cuando existen filas.
+ *
+ * ExcelJS puede rechazar rangos que ya tengan determinadas combinaciones de
+ * formato. La tabla es una mejora opcional, por lo que el libro continúa como
+ * rango normal si esa operación falla.
+ */
 function agregarTabla(hoja, nombre, ref, columnas, filas) {
   if (!filas.length) return;
   try {
@@ -164,6 +193,10 @@ function agregarTabla(hoja, nombre, ref, columnas, filas) {
   }
 }
 
+/**
+ * Crea la hoja detallada de productos y registra la primera fila de cada
+ * propietario para enlazarla desde el resumen.
+ */
 function hojaDetalleProductos(wb, productos, anchors) {
   const h = wb.addWorksheet('Detalle Productos', {
     views: [{ state: 'frozen', ySplit: 1 }],
@@ -241,6 +274,21 @@ function hojaDetalleProductos(wb, productos, anchors) {
   return h;
 }
 
+/**
+ * Genera y persiste el libro completo del reporte.
+ *
+ * @param {object} input
+ * @param {Array<Record<string, any>>} input.productos Productos con alerta.
+ * @param {Array<Record<string, any>>} [input.productosEnCava=input.productos] Inventario completo.
+ * @param {Array<Record<string, any>>} input.cortes Cortes con alerta.
+ * @param {string} input.fechaReporte Fecha utilizada en títulos y nombre.
+ * @returns {Promise<{
+ *   ruta: string,
+ *   nombreArchivo: string,
+ *   fManana: string,
+ *   fPasado: string
+ * }>}
+ */
 export async function generarExcel({ productos, productosEnCava = productos, cortes, fechaReporte }) {
   await mkdir(config.reportsDir, { recursive: true });
 
